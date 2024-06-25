@@ -1,0 +1,222 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+  previewFeatures = ["views"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentType {
+  crypto
+  fiat
+  card
+}
+
+model OperationMethod{
+  source PaymentType
+  destination PaymentType
+  is_active Boolean
+  @@id([source, destination])
+}
+
+model PaymentInstrument{
+  id Int @id @default(autoincrement())
+  symbol String
+  icon String?
+  name String
+  precision Int @default(1)
+  type PaymentType
+  mappings PaymentInstrumentMapping[]
+
+  source_operations OperationMethodChain[] @relation(name: "source")
+  destination_operations OperationMethodChain[] @relation(name: "destination")
+
+  source_orders Order[] @relation(name: "source")
+  destination_orderss Order[] @relation(name: "destination")
+  
+  @@index([symbol, type])
+}
+
+model PaymentInstrumentMapping{
+  instrument_id Int
+  instrument PaymentInstrument @relation(fields: [instrument_id], references: [id], onDelete: Cascade)
+  label String
+  value String 
+  @@id([instrument_id, label])
+  @@index([label, value])
+}
+
+
+model OperationMethodChain{
+  source_id Int
+  source PaymentInstrument @relation(fields: [source_id], references: [id], name: "source", onDelete: Cascade)
+  destination_id Int
+  destination PaymentInstrument @relation(fields: [destination_id], references: [id], name: "destination", onDelete: Cascade)
+  comission_id Int
+  is_active Boolean
+  min_amount Decimal
+  max_amount Decimal
+
+  transations Order[]
+  comission Comission @relation(fields: [comission_id], references: [id], name: "operation_comission", onDelete: Cascade)
+  
+  @@id([source_id, destination_id])
+}
+
+
+
+model Comission{
+  id Int @id @default(autoincrement())
+  title String?
+  amount Decimal
+  pairs OperationMethodChain[] @relation(name: "operation_comission")
+}
+
+
+enum OrderStatus {
+  placed
+  received
+  completed
+  cancelled
+  expired
+}
+
+
+enum OrderType {
+  pickup
+  online
+  delivery
+}
+
+
+model Order {
+  id String @id @default(uuid())
+  
+  order_number Int @unique @default(autoincrement())
+  user_id String?
+
+  source_id Int
+  destination_id Int
+  source PaymentInstrument @relation(fields: [source_id], references: [id], name: "source", onDelete: NoAction)
+  destination PaymentInstrument @relation(fields: [destination_id], references: [id], name: "destination", onDelete: NoAction)
+  
+  pair OperationMethodChain @relation(fields: [source_id, destination_id], references: [source_id, destination_id], onDelete: NoAction)
+  
+  status OrderStatus
+  type OrderType
+  
+  amount Decimal
+  amount_out Decimal
+  expired_at DateTime?
+
+  created_at DateTime
+  
+  recepient_address String?
+  
+  info_id Int @unique
+  info OrderInfo @relation(fields: [info_id], references: [id])
+  wo WalletOrder[]
+  // rt CryptoOrderRecepientToken[] @ignore
+
+  logs OrderLog[]
+  @@index([recepient_address, status])  
+}
+
+model OrderInfo {
+  id Int @id @default(autoincrement())
+  orders Order[]
+  name String?
+  email String?
+  phone String?
+  supposed_visit_date DateTime?
+  address String?
+}
+
+model OrderLog{
+  id Int @id @default(autoincrement())
+  order_id String
+  created_at DateTime
+  type String
+  mappings OrderLogMapping[]
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+}
+
+model OrderLogMapping{
+  log_id Int
+  label String
+  value String 
+  log OrderLog @relation(fields: [log_id], references: [id], onDelete: Cascade)
+  @@id([log_id, label])
+}
+
+
+model WalletOrder{
+  id String
+  type PaymentType
+  chain Int
+  order_id String
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  wallet_id Int
+  wallet Wallet @relation(fields: [wallet_id], references: [id], onDelete: Cascade)
+  @@id([id, chain])
+}
+
+// model CryptoOrderRecepientToken {
+//   id    String    @unique
+//   order_id String
+//   order Order @relation(fields: [order_id], references: [id])
+// }
+
+enum WalletStatus {
+  FREE
+  BUSY
+}
+
+model Wallet{
+  @@map("wallet")
+  id Int @id @default(autoincrement())  
+  phrase String @unique
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+  orders WalletOrder[]
+}
+
+model ChainSync {
+  chain Int @id
+  block Int 
+}
+
+enum TxStatus {
+  CREATED
+  COMPLETED
+}
+
+model Tx{
+  id String @id
+  name String
+  status TxStatus @default(CREATED)
+  logs TxLog[]
+  @@index([name])
+}
+
+model TxLog{
+  id Int @id @default(autoincrement())
+  tx_id String
+  type String
+  created_at DateTime
+  mappings TxLogMapping[]
+  tx Tx @relation(fields: [tx_id], references: [id], onDelete: Cascade)
+}
+
+model TxLogMapping {
+  tx_log_id Int
+  label String
+  value String
+  tx_log TxLog @relation(fields: [tx_log_id], references: [id], onDelete: Cascade)
+  @@id([tx_log_id, label])
+}

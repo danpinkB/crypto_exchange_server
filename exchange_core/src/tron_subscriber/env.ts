@@ -1,0 +1,14 @@
+import { WRAPPED_NATIVE_ADDRESSES } from "@abstract/const";
+import { ENV } from "@abstract/env";
+
+const CHAIN = 79
+const TRON_CHAIN_PROVIDER__DSN = ENV.get("TRON_CHAIN_PROVIDER__DSN")
+const TRON_API_KEY = ENV.get("TRON_API_KEY")
+const CHAIN_NATIVE_WRAPPED_ADDRESS = WRAPPED_NATIVE_ADDRESSES[CHAIN]
+
+export {
+    CHAIN,
+    TRON_CHAIN_PROVIDER__DSN, 
+    CHAIN_NATIVE_WRAPPED_ADDRESS,
+    TRON_API_KEY
+}

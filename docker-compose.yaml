@@ -1,0 +1,222 @@
+version: '3'
+
+volumes:
+  kv_db_data:
+  file_storage_data:
+    driver: local
+  data_storage_data:
+  message_broker_data:
+
+x-common-docker-image: &common-docker-image
+  image: common-docker-image
+  build:
+    context: ./exchange_core
+    dockerfile: ./Dockerfile
+    
+services:
+  file_storage:
+    container_name: file_storage 
+    image: docker.io/bitnami/minio:2024
+    ports:
+      - "${S3_CONSOLE_PORT}:9000"
+      - "${S3_ADMIN_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${S3_ROOT_PASSWORD}
+      MINIO_DEFAULT_BUCKETS: ${S3_BUCKET_NAME}
+    volumes:
+      - file_storage_data:/data
+  
+  message_broker:
+    image: 'rabbitmq:3-management'
+    volumes:
+      - message_broker_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    container_name: message_broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # LOGLEVEL: 'INFO'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5672" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  data_storage:
+    container_name: data_storage
+    image: postgres:15-alpine
+    volumes:
+      - ./deployment/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - data_storage_data:/var/lib/postgresql/data
+    environment:
+      # POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${KC_DB_USERNAME}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+  
+  kv_db:
+    image: 'redislabs/redismod'
+    volumes:
+      - kv_db_data:/.var
+    container_name: kv_db
+    restart: unless-stopped
+    # ports:
+    #   - "6379:6379"
+
+  # redis-commander:
+  #   container_name: redis-commander
+  #   hostname: redis-commander
+  #   image: rediscommander/redis-commander:latest
+  #   build: .
+  #   restart: always
+  #   environment:
+  #   - REDIS_HOSTS=local:kv_db:6379:2
+  #   ports:
+  #   - 8081:8081
+
+  keycloak:
+    container_name: keycloak
+    image: quay.io/keycloak/keycloak:23.0.3
+    environment:
+      KC_DB: ${KC_DB}
+      KC_DB_URL: ${KC_DB_URL}
+      KEYCLOAK_IMPORT: /opt/keycloak/imports/realm-export.json
+      KEYCLOAK_ADMIN: ${AUTH_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD}
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HTTP_RELATIVE_PATH: ${KC_HTTP_RELATIVE_PATH}
+      KC_HTTP_PORT: ${KC_HTTP_PORT}
+      KC_HTTP_HOST: ${KC_HTTP_HOST}
+      KC_METRICS_ENABLED: ${KC_METRICS_ENABLED}
+    command: 
+    - start-dev
+    - "--log-level=INFO"
+    - "--proxy=edge"
+    # - "--import-realm"
+    ports:
+      - 8080:8080
+      # - 9990:9990
+      # - 8443:8443
+    volumes:
+      - ./keycloak/theme/target/:/opt/keycloak/providers/
+  
+  ethereum_execution_manager:
+    <<: *common-docker-image
+    container_name: ethereum_execution_manager
+    command: ["node", "dist/src/eth_execution_manager/index.js"]
+    restart: unless-stopped
+    environment:
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      EXECUTION_WALLET_PRIVATE_KEY: ${EXECUTION_WALLET_PRIVATE_KEY}
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      EXECUTION_STATE_STORAGE__DSN: ${EXECUTION_STATE_STORAGE__DSN}
+      ORDERED_STORAGE__DSN: ${ORDERED_STORAGE__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN: 5
+
+  price_parser:
+    image: price_parser
+    container_name: price_parser
+    build:
+      context: ./price_parser
+      dockerfile: Dockerfile
+    command: ["python", "price_parser"]
+    restart: unless-stopped
+    environment:
+      KV_STORAGE__DSN : ${PRICE_STORAGE__DSN}
+    depends_on:
+      - kv_db
+
+  exchange_api:
+    <<: *common-docker-image
+    container_name: exchange_api
+    command: ["node", "dist/src/public_api/index.js"]
+    environment:
+      KV_STORAGE__DSN : ${PRICE_STORAGE__DSN}
+      TARGET_REALM: ${TARGET_REALM}
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_RESOURCE: ${AUTH_RESOURCE}
+      AUTH_SERVER_URL: ${AUTH_SERVER_URL}
+      AUTH_SSL_REQUIRED: ${AUTH_SSL_REQUIRED}
+      AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD}
+      EXCHANGE_API_PORT: ${EXCHANGE_API_PORT}
+
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      POLYGON_CHAIN_PROVIDER__DSN: ${POLYGON_CHAIN_PROVIDER__DSN}
+      TRON_CHAIN_PROVIDER__DSN: ${TRON_CHAIN_PROVIDER__DSN}
+      TRON_API_KEY: ${TRON_API_KEY}
+      BSC_CHAIN_PROVIDER__DSN: ${BSC_CHAIN_PROVIDER__DSN}
+      ARBITRUM_CHAIN_PROVIDER__DSN: ${ARBITRUM_CHAIN_PROVIDER__DSN}
+      OPTIMISM_CHAIN_PROVIDER__DSN: ${OPTIMISM_CHAIN_PROVIDER__DSN}
+
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+
+      GAS_SUGGESSOR_STORAGE__DSN: ${GAS_SUGGESSOR_STORAGE__DSN}
+
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      
+    depends_on:
+      - keycloak
+      - kv_db
+      - message_broker
+    ports:
+      - ${EXCHANGE_API_PORT}:${EXCHANGE_API_PORT}
+
+  admin_telegram_notifier:
+    <<: *common-docker-image
+    container_name: admin_telegram_notifier
+    command: ["node", "dist/src/admin_telegram_notifier/index.js"]
+    restart: unless-stopped
+    environment:
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      ADMIN_CHAT_ID: ${ADMIN_CHAT_ID}
+      TG_SECRET: ${TG_SECRET}
+    depends_on:
+      - message_broker
+  # blockchain_listeners
+  ethereum_listener:
+    <<: *common-docker-image
+    container_name: ethereum_listener
+    command: ["node", "dist/src/eth_subscriber/index.js"]
+    restart: unless-stopped
+    environment:
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      ORDERED_STORAGE__DSN: ${ORDERED_STORAGE__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN: 5
+
+  polygon_listener:
+    <<: *common-docker-image
+    container_name: polygon_listener
+    command: ["node", "dist/src/eth_subscriber/index.js"]
+    restart: unless-stopped
+    environment:
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN: 80001
+
+  tron_listener:
+    <<: *common-docker-image
+    container_name: tron_listener
+    command: ["node", "dist/src/tron_subscriber/index.js"]
+    restart: unless-stopped
+    environment:
+      TRON_CHAIN_PROVIDER__DSN: ${TRON_CHAIN_PROVIDER__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      TRON_API_KEY: ${TRON_API_KEY}
+      CHAIN: 79

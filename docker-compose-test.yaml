@@ -1,0 +1,132 @@
+version: '3'
+
+volumes:
+  kv_db_data:
+  message_broker_data:
+
+x-common-docker-image: &common-docker-image
+  image: common-docker-image
+  build:
+    context: ./exchange_core
+    dockerfile: ./Dockerfile
+    
+services:
+  message_broker:
+    image: 'rabbitmq:3-management'
+    volumes:
+      - message_broker_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    container_name: message_broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # LOGLEVEL: 'INFO'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5672" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports: 
+      - 15672:15672
+      - 5673:5672
+  
+  kv_db:
+    image: 'redislabs/redismod'
+    volumes:
+      - kv_db_data:/.var
+    container_name: kv_db
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  price_parser:
+    image: price_parser
+    container_name: price_parser
+    build:
+      context: ./price_parser
+      dockerfile: Dockerfile
+    command: ["python", "price_parser"]
+    restart: unless-stopped
+    environment:
+      KV_STORAGE__DSN : ${PRICE_STORAGE__DSN}
+    depends_on:
+      - kv_db
+
+  exchange_api:
+    <<: *common-docker-image
+    container_name: exchange_api
+    command: ["node", "dist/src/public_api/index.js"]
+    environment:
+      TARGET_REALM: ${TARGET_REALM}
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_RESOURCE: ${AUTH_RESOURCE}
+      AUTH_SERVER_URL: ${AUTH_SERVER_URL}
+      AUTH_SSL_REQUIRED: ${AUTH_SSL_REQUIRED}
+      AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD}
+      EXCHANGE_API_PORT: ${EXCHANGE_API_PORT}
+
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+
+      KV_STORAGE__DSN: ${KV_STORAGE__DSN}
+
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      POLYGON_CHAIN_PROVIDER__DSN: ${POLYGON_CHAIN_PROVIDER__DSN}
+      TRON_CHAIN_PROVIDER__DSN: ${TRON_CHAIN_PROVIDER__DSN}
+      TRON_API_KEY: ${TRON_API_KEY}
+      BSC_CHAIN_PROVIDER__DSN: ${BSC_CHAIN_PROVIDER__DSN}
+      ARBITRUM_CHAIN_PROVIDER__DSN: ${ARBITRUM_CHAIN_PROVIDER__DSN}
+      OPTIMISM_CHAIN_PROVIDER__DSN: ${OPTIMISM_CHAIN_PROVIDER__DSN}
+
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+
+      GAS_SUGGESSOR_STORAGE__DSN: ${GAS_SUGGESSOR_STORAGE__DSN}
+
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      
+    depends_on:
+      - kv_db
+      - message_broker
+    ports:
+      - ${EXCHANGE_API_PORT}:${EXCHANGE_API_PORT}
+
+  # blockchain_listeners
+  ethereum_listener_sepolia:
+    <<: *common-docker-image
+    container_name: ethereum_listener_sepolia
+    command: ["node", "dist/src/eth_subscriber/index.js"]
+    restart: unless-stopped
+    environment:
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      ORDERED_STORAGE__DSN: ${ORDERED_STORAGE__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN: 5
+    depends_on:
+      - kv_db
+      - message_broker
+
+  ethereum_execution_manager_sepolia:
+    <<: *common-docker-image
+    container_name: ethereum_execution_manager_sepolia
+    command: ["node", "dist/src/eth_execution_manager/index.js"]
+    restart: unless-stopped
+    environment:
+      ETH_CHAIN_PROVIDER__DSN: ${ETH_CHAIN_PROVIDER__DSN}
+      EXECUTION_WALLET_PRIVATE_KEY: ${EXECUTION_WALLET_PRIVATE_KEY}
+      HASH_SECRET: ${HASH_SECRET}
+      HASH_SECRET_NONCE: ${HASH_SECRET_NONCE}
+      MESSAGE_BROKER__DSN: ${MESSAGE_BROKER__DSN}
+      EXECUTION_STATE_STORAGE__DSN: ${EXECUTION_STATE_STORAGE__DSN}
+      ORDERED_STORAGE__DSN: ${ORDERED_STORAGE__DSN}
+      DATABASE_URL: ${DATABASE_URL}
+      CHAIN: 5
+    depends_on:
+      - kv_db
+      - message_broker

@@ -1,0 +1,37 @@
+{
+  "ts-node": {
+    "transpileOnly": true,
+    "require": [ "typescript-transform-paths/register" ],
+  },
+  "compilerOptions": {
+    "rootDir": ".",
+    "target": "esnext",
+    "module": "commonjs",
+    "strict": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@entity_mapper/*": ["src/model/*"],
+      "@abstract/*": ["src/abstract/*"],
+      "@facade/*": ["src/facade/*"],
+      "@service/*": ["src/service/*"],
+      "@helper/*": ["src/helper/*"],
+      "@static/*": ["src/abi/*"],
+      "@utils/*": ["src/utils/*"],
+      "@external/*": ["external/*"]
+    }
+  },
+  "include": [
+    "src/"
+  ]
+  // "plugins": [
+  //   { "transform": "typescript-transform-paths", "useRootDirs": true },
+  //   { "transform": "typescript-transform-paths", "useRootDirs": true, "afterDeclarations": true }
+  // ]
+}

@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "price-parser"
+version = "0.1.0"
+description = ""
+authors = ["Danila Belozarovich <belazproger@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+websockets = "^12.0"
+asyncio = "^3.4.3"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.25"}
+aio-binance-library = "^2.0.7"
+redis = "^5.0.1"
+python-dotenv = "^1.0.0"
+requests = "^2.31.0"
+aiopg = "^1.4.0"
+cryptography = "42.0.2"
+fastapi = {extras = ["all"], version = "^0.109.2"}
+fastapi-keycloak-middleware = "^0.3.0"
+web3 = "^6.15.1"
+asyncpg = "^0.29.0"
+psycopg = {extras = ["async"], version = "^3.1.17"}
+tronpy = "^0.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
